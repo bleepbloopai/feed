@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JayFeed</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;800&family=Figtree:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f6f4ef;--card:#fff;--ink:#1b1a22;--mute:#6d6a78;--line:#e3dfd6;--acc:#3a2de0;--heart:#e0245e}
+@media(prefers-color-scheme:dark){:root{--bg:#14131a;--card:#1d1c26;--ink:#f1eff7;--mute:#9a97a8;--line:#2d2b3a;--acc:#8f86ff}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Figtree,system-ui,sans-serif}
+header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;z-index:5}
+h1{font:800 26px 'Bricolage Grotesque',sans-serif;margin:0;letter-spacing:-.5px}h1 span{color:var(--acc)}
+main{max-width:600px;margin:0 auto;padding:16px}
+button,input,textarea{font:inherit;color:inherit}
+button{background:var(--acc);color:#fff;border:0;border-radius:999px;padding:7px 16px;cursor:pointer;font-weight:600}
+button.ghost{background:none;color:var(--ink);border:1px solid var(--line)}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+input,textarea{width:100%;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin:4px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:14px}
+.post img,.post video{max-width:100%;border-radius:10px;margin-top:8px;display:block}
+.who{font-weight:600}.time{color:var(--mute);font-size:14px}.body{white-space:pre-wrap;word-break:break-word;margin:6px 0 0}
+a{color:var(--acc)}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.like{background:none;color:var(--mute);padding:4px 0;font-weight:400}.like.on{color:var(--heart)}
+.opt{position:relative;width:100%;text-align:left;background:none;color:var(--ink);border:1px solid var(--line);border-radius:8px;margin-top:6px;padding:7px 10px;overflow:hidden}
+.opt i{position:absolute;inset:0 auto 0 0;background:var(--acc);opacity:.18}.opt b{position:relative}.opt span{position:relative;float:right}
+#msg{color:var(--heart);min-height:20px;font-size:14px}dialog{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);width:min(420px,92vw)}
+dialog::backdrop{background:#0008}#thread{max-height:280px;overflow:auto;margin-bottom:8px}.m{padding:6px 10px;border-radius:12px;margin:4px 0;max-width:80%;background:var(--bg)}.m.o{margin-left:auto;background:var(--acc);color:#fff}
+</style></head><body>
+<header><h1>Jay<span>Feed</span></h1><div class="row" id="nav"></div></header>
+<main><div id="composer"></div><div id="feed"></div></main>
+<dialog id="auth"><form method="dialog" onsubmit="return false"><h2 id="atitle" style="margin-top:0"></h2>
+<input id="u" placeholder="Username" autocomplete="username"><input id="p" type="password" placeholder="Password" autocomplete="current-password">
+<div id="msg"></div><div class="row"><button id="go"></button><button class="ghost" onclick="auth.close()">Cancel</button></div></form></dialog>
+<dialog id="dm"><h2 style="margin-top:0" id="dmtitle">Message Jay</h2><div id="threads"></div><div id="thread"></div>
+<input id="dmtext" placeholder="Write a message"><div class="row"><button onclick="sendDM()">Send</button><button class="ghost" onclick="dm.close()">Close</button></div></dialog>
+<script>
+const $=id=>document.getElementById(id);let ME=null,mode='login',withUser=null;
+const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=s=>esc(s||'').replace(/https?:\/\/[^\s<]+/g,u=>`<a href="${u}" target="_blank" rel="noopener noreferrer nofollow">${u}</a>`);
+const api=async(p,o={})=>{const r=await fetch('/api/'+p,o);const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Something went wrong');return d};
+const post=(p,b)=>api(p,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b||{})});
+function openAuth(m){mode=m;$('atitle').textContent=m=='login'?'Log in':'Create account';$('go').textContent=m=='login'?'Log in':'Sign up';$('msg').textContent='';auth.showModal()}
+$('go').onclick=async()=>{try{await post(mode,{username:$('u').value.trim(),password:$('p').value});$('p').value='';auth.close();init()}catch(e){$('msg').textContent=e.message}};
+async function init(){ME=await api('me');
+$('nav').innerHTML=ME?`<span class="who">@${esc(ME.name)}</span><button class="ghost" onclick="openDM()">Messages</button><button class="ghost" onclick="logout()">Log out</button>`:`<button class="ghost" onclick="openAuth('login')">Log in</button><button onclick="openAuth('signup')">Sign up</button>`;
+$('composer').innerHTML=ME&&ME.owner?`<div class="card"><textarea id="pb" rows="3" maxlength="1000" placeholder="What's happening?"></textarea><input id="pl" placeholder="Link (optional)"><input id="pf" type="file" accept="image/*,video/*"><input id="po" placeholder="Poll options, separated by commas (optional, 2-4)"><div id="pm" style="color:var(--heart)"></div><button onclick="publish()">Post</button></div>`:'';
+load()}
+async function logout(){await api('logout');init()}
+async function publish(){const f=new FormData();f.set('body',$('pb').value);f.set('link',$('pl').value);const file=$('pf').files[0];if(file)f.set('file',file);
+f.set('poll',JSON.stringify($('po').value.split(',').map(s=>s.trim()).filter(Boolean)));
+try{$('pm').textContent='Posting…';await api('posts',{method:'POST',body:f});init()}catch(e){$('pm').textContent=e.message}}
+async function load(){const ps=await api('posts');$('feed').innerHTML=ps.length?ps.map(p=>{
+const media=p.media?(p.media.type=='video'?`<video src="${p.media.url}" controls preload="metadata"></video>`:`<img src="${p.media.url}" loading="lazy" alt="">`):'';
+const link=p.link?`<p><a href="${esc(p.link)}" target="_blank" rel="noopener noreferrer nofollow">${esc(p.link)}</a></p>`:'';
+let poll='';if(p.poll){const t=p.poll.reduce((a,o)=>a+o.votes,0);poll=p.poll.map((o,i)=>`<button class="opt" ${p.myVote!==null?'disabled':''} onclick="vote(${p.id},${i})"><i style="width:${t?o.votes/t*100:0}%"></i><b>${esc(o.text)}</b><span>${o.votes}</span></button>`).join('')}
+return `<article class="card post"><div><span class="who">${esc(ME&&ME.owner?ME.name:'ImJsJayFr')}</span> <span class="time">${new Date(p.created).toLocaleString()}</span></div>
+${p.body?`<p class="body">${fmt(p.body)}</p>`:''}${link}${media}${poll}<div style="margin-top:8px"><button class="like ${p.liked?'on':''}" onclick="like(${p.id})">${p.liked?'♥':'♡'} ${p.likes}</button></div></article>`}).join(''):'<p class="time">No posts yet.</p>'}
+async function like(id){if(!ME)return openAuth('login');try{await post('like/'+id);load()}catch(e){alert(e.message)}}
+async function vote(id,opt){if(!ME)return openAuth('login');try{await post('vote/'+id,{opt});load()}catch(e){alert(e.message)}}
+async function openDM(){dm.showModal();$('threads').innerHTML='';if(ME.owner){$('dmtitle').textContent='Inbox';const t=await api('dm/threads');$('threads').innerHTML=t.map(x=>`<button class="ghost" style="margin:2px" onclick="pick('${esc(x.name)}')">@${esc(x.name)}</button>`).join('')||'<p class="time">No messages yet.</p>';withUser=null;$('thread').innerHTML=''}else loadThread()}
+function pick(n){withUser=n;$('dmtitle').textContent='@'+n;loadThread()}
+async function loadThread(){const m=await api('dm'+(ME.owner?'?with='+encodeURIComponent(withUser):''));$('thread').innerHTML=m.map(x=>`<div class="m ${x.from_owner==(ME.owner?1:0)?'o':''}">${esc(x.body)}</div>`).join('');$('thread').scrollTop=1e9}
+async function sendDM(){const b=$('dmtext').value;if(!b.trim()||(ME.owner&&!withUser))return;try{await post('dm',{body:b,to:withUser});$('dmtext').value='';loadThread()}catch(e){alert(e.message)}}
+init();
+</script></body></html>
