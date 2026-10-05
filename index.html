@@ -41,15 +41,18 @@ function openAuth(m){mode=m;$('atitle').textContent=m=='login'?'Log in':'Create 
 $('go').onclick=async()=>{try{await post(mode,{username:$('u').value.trim(),password:$('p').value});$('p').value='';auth.close();init()}catch(e){$('msg').textContent=e.message}};
 async function init(){ME=await api('me');
 $('nav').innerHTML=ME?`<span class="who">@${esc(ME.name)}</span><button class="ghost" onclick="openDM()">Messages</button><button class="ghost" onclick="logout()">Log out</button>`:`<button class="ghost" onclick="openAuth('login')">Log in</button><button onclick="openAuth('signup')">Sign up</button>`;
-$('composer').innerHTML=ME&&ME.owner?`<div class="card"><textarea id="pb" rows="3" maxlength="1000" placeholder="What's happening?"></textarea><input id="pl" placeholder="Link (optional)"><input id="pf" type="file" accept="image/*,video/*"><input id="po" placeholder="Poll options, separated by commas (optional, 2-4)"><div id="pm" style="color:var(--heart)"></div><button onclick="publish()">Post</button></div>`:'';
+$('composer').innerHTML=ME&&ME.owner?`<div class="card"><textarea id="pb" rows="3" maxlength="1000" placeholder="What's happening?"></textarea><input id="pl" placeholder="Link (optional) - YouTube and .mp4 links play in the post"><input id="pf" type="file" accept="image/*"><input id="po" placeholder="Poll options, separated by commas (optional, 2-4)"><div id="pm" style="color:var(--heart)"></div><button onclick="publish()">Post</button></div>`:'';
 load()}
 async function logout(){await api('logout');init()}
-async function publish(){const f=new FormData();f.set('body',$('pb').value);f.set('link',$('pl').value);const file=$('pf').files[0];if(file)f.set('file',file);
+async function shrink(file){const b=await createImageBitmap(file);const s=Math.min(1,1280/Math.max(b.width,b.height));const c=document.createElement('canvas');c.width=b.width*s;c.height=b.height*s;c.getContext('2d').drawImage(b,0,0,c.width,c.height);return new Promise(r=>c.toBlob(r,'image/jpeg',.8))}
+async function publish(){const f=new FormData();f.set('body',$('pb').value);f.set('link',$('pl').value);const file=$('pf').files[0];if(file){if(!file.type.startsWith('image/')){$('pm').textContent='Only photos can be uploaded. Post videos as a link.';return}f.set('file',await shrink(file),'photo.jpg')}
 f.set('poll',JSON.stringify($('po').value.split(',').map(s=>s.trim()).filter(Boolean)));
 try{$('pm').textContent='Posting…';await api('posts',{method:'POST',body:f});init()}catch(e){$('pm').textContent=e.message}}
 async function load(){const ps=await api('posts');$('feed').innerHTML=ps.length?ps.map(p=>{
 const media=p.media?(p.media.type=='video'?`<video src="${p.media.url}" controls preload="metadata"></video>`:`<img src="${p.media.url}" loading="lazy" alt="">`):'';
-const link=p.link?`<p><a href="${esc(p.link)}" target="_blank" rel="noopener noreferrer nofollow">${esc(p.link)}</a></p>`:'';
+const yt=p.link&&/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/.exec(p.link);
+const emb=yt?`<iframe src="https://www.youtube.com/embed/${yt[1]}" style="width:100%;aspect-ratio:16/9;border:0;border-radius:10px;margin-top:8px" allowfullscreen></iframe>`:(p.link&&/\.(mp4|webm|mov)(\?|$)/i.test(p.link)?`<video src="${esc(p.link)}" controls preload="metadata"></video>`:'');
+const link=p.link?`<p><a href="${esc(p.link)}" target="_blank" rel="noopener noreferrer nofollow">${esc(p.link)}</a></p>${emb}`:'';
 let poll='';if(p.poll){const t=p.poll.reduce((a,o)=>a+o.votes,0);poll=p.poll.map((o,i)=>`<button class="opt" ${p.myVote!==null?'disabled':''} onclick="vote(${p.id},${i})"><i style="width:${t?o.votes/t*100:0}%"></i><b>${esc(o.text)}</b><span>${o.votes}</span></button>`).join('')}
 return `<article class="card post"><div><span class="who">${esc(ME&&ME.owner?ME.name:'ImJsJayFr')}</span> <span class="time">${new Date(p.created).toLocaleString()}</span></div>
 ${p.body?`<p class="body">${fmt(p.body)}</p>`:''}${link}${media}${poll}<div style="margin-top:8px"><button class="like ${p.liked?'on':''}" onclick="like(${p.id})">${p.liked?'♥':'♡'} ${p.likes}</button></div></article>`}).join(''):'<p class="time">No posts yet.</p>'}
