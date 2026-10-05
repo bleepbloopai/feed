@@ -4,6 +4,7 @@ const J = (d, s = 200, h = {}) => new Response(JSON.stringify(d), { status: s, h
 const b64 = b => btoa(String.fromCharCode(...new Uint8Array(b)));
 const unb = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 const eq = (a, b) => { a = String(a); b = String(b); let r = a.length ^ b.length; for (let i = 0; i < Math.max(a.length, b.length); i++) r |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0); return r === 0; };
+const toB64 = buf => { let s = ''; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 8192) s += String.fromCharCode(...u.subarray(i, i + 8192)); return btoa(s); };
 const hmac = async (env, d) => { const k = await crypto.subtle.importKey('raw', enc.encode(env.SESSION_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']); return b64(await crypto.subtle.sign('HMAC', k, enc.encode(d))); };
 const hashPw = async (pw, salt) => { const k = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveBits']); return b64(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: 100000 }, k, 256)); };
 
@@ -31,12 +32,9 @@ export default {
     const DB = env.DB, now = Date.now();
     try {
       if (path.startsWith('/api/media/')) {
-        const o = await env.MEDIA.get(path.slice(11), { range: req.headers });
-        if (!o) return new Response('Not found', { status: 404 });
-        const h = new Headers(); o.writeHttpMetadata(h);
-        h.set('accept-ranges', 'bytes'); h.set('cache-control', 'public, max-age=31536000');
-        if (o.range) { const { offset = 0, length = o.size - offset } = o.range; h.set('content-range', `bytes ${offset}-${offset + length - 1}/${o.size}`); return new Response(o.body, { status: 206, headers: h }); }
-        return new Response(o.body, { headers: h });
+        const r = await DB.prepare('SELECT mime,data FROM media WHERE key=?').bind(path.slice(11)).first();
+        if (!r) return new Response('Not found', { status: 404 });
+        return new Response(unb(r.data), { headers: { 'content-type': r.mime, 'cache-control': 'public, max-age=31536000' } });
       }
       const u = await me(req, env);
       if (path === '/api/me') return J(u ? { name: u.name, owner: u.owner } : null);
@@ -83,10 +81,10 @@ export default {
         if (opts.length) { if (opts.length < 2 || opts.length > 4) return J({ error: 'A poll needs 2-4 options' }, 400); poll = JSON.stringify(opts); }
         const file = f.get('file'); let key = null, type = null;
         if (file && file.size) {
-          type = file.type.startsWith('video/') ? 'video' : file.type.startsWith('image/') ? 'image' : null;
-          if (!type) return J({ error: 'Only photos and videos can be uploaded' }, 400);
-          key = crypto.randomUUID();
-          await env.MEDIA.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
+          if (!file.type.startsWith('image/')) return J({ error: 'Only photos can be uploaded. Post videos as a link.' }, 400);
+          if (file.size > 1300000) return J({ error: 'Photo is too big (max 1.3 MB)' }, 400);
+          type = 'image'; key = crypto.randomUUID();
+          await DB.prepare('INSERT INTO media(key,mime,data) VALUES(?,?,?)').bind(key, file.type, toB64(await file.arrayBuffer())).run();
         }
         if (!body && !link && !poll && !key) return J({ error: 'Post is empty' }, 400);
         await DB.prepare('INSERT INTO posts(body,link,media_key,media_type,poll,created) VALUES(?,?,?,?,?,?)').bind(body, link || null, key, type, poll, now).run();
