@@ -1,0 +1,12 @@
+name = "jayfeed"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "jayfeed"
+database_id = "PASTE-YOUR-D1-DATABASE-ID-HERE"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "jayfeed-media"
