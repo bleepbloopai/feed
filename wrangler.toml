@@ -5,7 +5,7 @@ compatibility_date = "2025-01-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "jayfeed"
-database_id = "PASTE-YOUR-D1-DATABASE-ID-HERE"
+database_id = "2e6506cb-3ed3-4de4-8cd1-8f532aa2b20f"
 
 [[r2_buckets]]
 binding = "MEDIA"
